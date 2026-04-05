@@ -1,9 +1,13 @@
 import re
 import nltk
-from nltk.corpus import stopwords
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-# Download necessary NLTK data
+# Regex patterns pre-compiled for performance
+URL_PATTERN = re.compile(r'http\S+|www\S+|https\S+', re.MULTILINE)
+MENTION_HASHTAG_PATTERN = re.compile(r'\@\w+|\#\w+')
+CLEAN_CHARS_PATTERN = re.compile(r'[^a-zA-Z\s]')
+
+# Ensure necessary NLTK data (though we're not currently using stopwords in the scoring)
 try:
     nltk.data.find('corpora/stopwords')
 except LookupError:
@@ -12,34 +16,36 @@ except LookupError:
 class PoliticalAnalyzer:
     def __init__(self):
         self.sia = SentimentIntensityAnalyzer()
-        self.stop_words = set(stopwords.words('english'))
+        # Removed self.stop_words as it was unused and consuming memory
 
     def clean_text(self, text):
-        """Removes URLs, mentions, hashtags, and special characters."""
+        """High-performance text cleaning using pre-compiled regex."""
         if not text:
             return ""
         
-        # Lowercase
+        # Combine operations: lowercase and initial character cleaning
         text = text.lower()
-        # Remove URLs
-        text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
-        # Remove mentions (@user) and hashtags (#tag)
-        text = re.sub(r'\@\w+|\#\w+', '', text)
-        # Remove emojis and non-ascii
-        text = text.encode('ascii', 'ignore').decode('ascii')
-        # Remove special characters and numbers
-        text = re.sub(r'[^a-zA-Z\s]', '', text)
-        # Remove extra whitespace
-        text = " ".join(text.split())
         
-        return text
+        # Remove URLs, mentions, hashtags
+        text = URL_PATTERN.sub('', text)
+        text = MENTION_HASHTAG_PATTERN.sub('', text)
+        
+        # Strip non-ASCII (emojis) efficiently
+        text = text.encode('ascii', 'ignore').decode('ascii')
+        
+        # Strip special chars and numbers
+        text = CLEAN_CHARS_PATTERN.sub('', text)
+        
+        # Trim whitespace
+        return " ".join(text.split())
 
     def get_sentiment(self, text):
-        """Returns a sentiment dictionary with specialized scores."""
+        """Returns a sentiment dictionary. Performance optimized."""
         cleaned = self.clean_text(text)
         if not cleaned:
             return {"sentiment": "neutral", "score": 0.0, "positive": 0.0, "negative": 0.0, "neutral": 1.0}
         
+        # VADER is relatively fast, so we keep this call as-is
         scores = self.sia.polarity_scores(cleaned)
         compound = scores['compound']
         
@@ -57,14 +63,3 @@ class PoliticalAnalyzer:
             "negative": scores['neg'],
             "neutral": scores['neu']
         }
-
-if __name__ == "__main__":
-    analyzer = PoliticalAnalyzer()
-    test_texts = [
-        "The new policy is an absolute disaster for the economy! #FailedState",
-        "I am very optimistic about the upcoming election, things are looking up.",
-        "The debate happened yesterday at 8 PM."
-    ]
-    for t in test_texts:
-        print(f"Text: {t}")
-        print(f"Result: {analyzer.get_sentiment(t)}\n")

@@ -3,6 +3,8 @@ import time
 import datetime
 import threading
 from collections import deque
+import feedparser
+from newsapi import NewsApiClient
 
 # Simulated political headlines and templates for Mock Mode
 MOCK_TOPICS = ["Economy", "Election", "Healthcare", "Climate Policy", "Foreign Relations", "Education", "Infrastructure", "Trade Wars"]
@@ -53,14 +55,63 @@ class RedditScraper:
             for submission in self.reddit.subreddit(subreddit).new(limit=limit):
                 posts.append({
                     "id": submission.id,
-                    "text": submission.title + " " + submission.selftext[:200],
+                    "text": f"{submission.title} {submission.selftext[:200]}",
                     "timestamp": datetime.datetime.fromtimestamp(submission.created_utc).isoformat(),
                     "source": "Reddit",
-                    "author": "u/" + str(submission.author)
+                    "author": f"u/{submission.author}"
                 })
             return posts
         except Exception as e:
             print(f"Error fetching from Reddit: {e}")
+            return []
+
+class NewsScraper:
+    def __init__(self, api_key=None):
+        self.enabled = False
+        if api_key:
+            try:
+                self.newsapi = NewsApiClient(api_key=api_key)
+                self.enabled = True
+            except Exception as e:
+                print(f"Failed to initialize NewsAPI: {e}")
+
+    def fetch_recent(self, query="politics", limit=10):
+        if not self.enabled:
+            return []
+        try:
+            articles = self.newsapi.get_everything(q=query, sort_by='publishedAt', page_size=limit, language='en')
+            posts = []
+            for art in articles.get('articles', []):
+                posts.append({
+                    "id": f"news_{art['url'][-10:]}",
+                    "text": f"{art['title']}. {art['description'] or ''}",
+                    "timestamp": art['publishedAt'],
+                    "source": art['source']['name'],
+                    "author": art['author'] or "Journalist"
+                })
+            return posts
+        except Exception as e:
+            print(f"Error fetching from NewsAPI: {e}")
+            return []
+
+class RSSScraper:
+    def fetch_recent(self, subreddit="politics", limit=10):
+        try:
+            url = f"https://www.reddit.com/r/{subreddit}/new/.rss"
+            feed = feedparser.parse(url, agent="Mozilla/5.0 (Windows NT 10.0) PoliticsTracker/1.0")
+            posts = []
+            now_iso = datetime.datetime.now().isoformat()
+            for entry in feed.entries[:limit]:
+                posts.append({
+                    "id": entry.id,
+                    "text": entry.title,
+                    "timestamp": now_iso,
+                    "source": "Reddit RSS",
+                    "author": getattr(entry, 'author', "Anonymous")
+                })
+            return posts
+        except Exception as e:
+            print(f"Error fetching from RSS: {e}")
             return []
 
 class MockScraper:
@@ -69,7 +120,6 @@ class MockScraper:
         topic = random.choice(MOCK_TOPICS)
         template = random.choice(MOCK_SENTIMENTS[sentiment_type])
         
-        # Add random entities
         entities = [topic, random.choice(["Gov", "Policy", "Reform", "Budget", "Debate"])]
         
         return {
@@ -82,66 +132,103 @@ class MockScraper:
         }
 
 class PoliticalStreamer:
-    def __init__(self, analyzer, reddit_keys=None):
+    def __init__(self, analyzer, reddit_keys=None, news_api_key=None):
         self.analyzer = analyzer
         self.reddit = RedditScraper(**(reddit_keys or {}))
+        self.news = NewsScraper(api_key=news_api_key)
+        self.rss = RSSScraper()
         self.mock = MockScraper()
         
-        # Buffer for latest posts
         self.buffer = deque(maxlen=100)
-        self.stats_history = deque(maxlen=50) # Store aggregate stats over time
-        self.entity_counts = {} # Tracking trending keywords
+        self.stats_history = deque(maxlen=50)
+        self.entity_counts = {}
+        self.known_ids = set() # O(1) lookup for duplicates
         
+        # Statistics Rolling Accumulators for O(1) updates
+        self._rolling_window = deque(maxlen=20)
+        self._sum_score = 0.0
+        self._pos_count = 0
+        self._neg_count = 0
+
+        self.pending_queue = deque()
         self._running = False
         self._thread = None
-        self.mode = "mock" if not self.reddit.enabled else "live"
+        
+        if self.reddit.enabled:
+            self.mode = "live"
+        elif self.news.enabled:
+            self.mode = "news"
+        else:
+            self.mode = "mock"
 
     def _stream_worker(self):
+        last_fetch_time = 0
+        fetch_interval = 60
+
         while self._running:
-            if self.mode == "live":
-                new_posts = self.reddit.fetch_recent(limit=5)
-                if not new_posts:
-                    post = self.mock.generate_post()
-                    self._process_and_add(post)
-                else:
-                    existing_ids = [p['id'] for p in self.buffer]
-                    for post in new_posts:
-                        if post['id'] not in existing_ids:
-                            # Basic keyword extraction for live data
-                            post['entities'] = [w for w in post['text'].split() if len(w) > 5][:3]
-                            self._process_and_add(post)
-            else:
-                post = self.mock.generate_post()
+            if not self.pending_queue:
+                current_time = time.time()
+                if current_time - last_fetch_time > fetch_interval:
+                    new_posts = []
+                    if self.mode == "live":
+                        new_posts = self.reddit.fetch_recent(limit=20)
+                    elif self.mode == "news":
+                        new_posts = self.news.fetch_recent(limit=20)
+                    elif self.mode == "rss":
+                        new_posts = self.rss.fetch_recent(limit=25)
+                    
+                    if new_posts:
+                        for post in new_posts:
+                            if post['id'] not in self.known_ids:
+                                self.pending_queue.append(post)
+                        last_fetch_time = current_time
+
+            if self.pending_queue:
+                post = self.pending_queue.popleft()
+                post['entities'] = [w for w in post['text'].split() if len(w) > 5][:3]
                 self._process_and_add(post)
+            else:
+                self._process_and_add(self.mock.generate_post())
             
-            self._update_stats()
-            time.sleep(random.uniform(2, 5))
+            self._update_stats_rolling()
+            time.sleep(random.uniform(1.2, 2.5))
 
     def _process_and_add(self, post):
         analysis = self.analyzer.get_sentiment(post['text'])
         post.update(analysis)
-        self.buffer.appendleft(post)
         
-        # Update entity counts
+        # Maintain buffer and ID set
+        if len(self.buffer) >= self.buffer.maxlen:
+             old_post = self.buffer.pop()
+             self.known_ids.discard(old_post['id'])
+        
+        self.buffer.appendleft(post)
+        self.known_ids.add(post['id'])
+        
+        # Update rolling statistics window
+        if len(self._rolling_window) >= self._rolling_window.maxlen:
+            old = self._rolling_window.pop()
+            self._sum_score -= old['score']
+            if old['sentiment'] == "positive": self._pos_count -= 1
+            elif old['sentiment'] == "negative": self._neg_count -= 1
+            
+        self._rolling_window.appendleft(post)
+        self._sum_score += post['score']
+        if post['sentiment'] == "positive": self._pos_count += 1
+        elif post['sentiment'] == "negative": self._neg_count += 1
+
         for ent in post.get('entities', []):
             self.entity_counts[ent] = self.entity_counts.get(ent, 0) + 1
 
-    def _update_stats(self):
-        if not self.buffer:
-            return
-        
-        recent = list(self.buffer)[:20]
-        avg_score = sum(p['score'] for p in recent) / len(recent)
-        pos_count = sum(1 for p in recent if p['sentiment'] == "positive")
-        neg_count = sum(1 for p in recent if p['sentiment'] == "negative")
-        neu_count = sum(1 for p in recent if p['sentiment'] == "neutral")
+    def _update_stats_rolling(self):
+        count = len(self._rolling_window)
+        if count == 0: return
         
         self.stats_history.append({
             "timestamp": datetime.datetime.now().isoformat(),
-            "avg_sentiment": round(avg_score, 3),
-            "pos_ratio": round(pos_count / len(recent), 2),
-            "neg_ratio": round(neg_count / len(recent), 2),
-            "neu_ratio": round(neu_count / len(recent), 2),
+            "avg_sentiment": round(self._sum_score / count, 3),
+            "pos_ratio": round(self._pos_count / count, 2),
+            "neg_ratio": round(self._neg_count / count, 2),
             "volume": len(self.buffer)
         })
 
@@ -153,16 +240,13 @@ class PoliticalStreamer:
 
     def stop(self):
         self._running = False
-        if self._thread:
-            self._thread.join()
 
     def get_snapshot(self):
-        # Sort entities by popularity
         top_entities = sorted(self.entity_counts.items(), key=lambda x: x[1], reverse=True)[:8]
-        
         return {
             "latest_posts": list(self.buffer)[:15],
             "history": list(self.stats_history),
             "trending": [{"name": k, "count": v} for k, v in top_entities],
+            "summary": self.stats_history[-1] if self.stats_history else {},
             "mode": self.mode
         }

@@ -6,3 +6,5 @@ vaderSentiment
 pandas
 numpy
 python-dotenv
+feedparser
+newsapi-python
