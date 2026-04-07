@@ -428,6 +428,20 @@ h3 {
   min-height: 200px;
 }
 
+.feed-info-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #93c5fd;
+}
+
 .feed-loading {
   display: flex;
   flex-direction: column;

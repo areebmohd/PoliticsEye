@@ -41,7 +41,13 @@ def health():
     return jsonify({
         "status": "healthy",
         "mode": streamer.mode,
-        "streaming": streamer._running
+        "streaming": streamer._running,
+        "buffer_counts": {
+            "mock": len(streamer.buffers["mock"]),
+            "news": len(streamer.buffers["news"]),
+            "live": len(streamer.buffers["live"]),
+            "rss": len(streamer.buffers["rss"])
+        }
     })
 
 @app.route('/api/snapshot', methods=['GET'])

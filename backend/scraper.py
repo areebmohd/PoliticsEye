@@ -186,33 +186,40 @@ class PoliticalStreamer:
             self._last_fetch_time = 0 # Trigger immediate fetch
 
     def _stream_worker(self):
+        print(f"Background streamer worker started in mode: {self.mode}")
         while self._running:
-            active_mode = self.mode # Capture current mode for the entire iteration
-            if not self.pending_queue:
-                current_time = time.time()
-                if current_time - self._last_fetch_time > 60:
-                    new_posts = []
-                    if active_mode == "live":
-                        new_posts = self.reddit.fetch_recent(limit=20)
-                    elif active_mode == "news":
-                        new_posts = self.news.fetch_recent(limit=20)
-                    elif active_mode == "rss":
-                        new_posts = self.rss.fetch_recent(limit=25)
-                    
-                    if new_posts:
-                        for post in new_posts:
-                            if post['id'] not in self.known_ids:
-                                self.pending_queue.append(post)
-                        self._last_fetch_time = current_time
+            try:
+                active_mode = self.mode # Capture current mode for the entire iteration
+                if not self.pending_queue:
+                    current_time = time.time()
+                    if current_time - self._last_fetch_time > 60:
+                        new_posts = []
+                        if active_mode == "live":
+                            new_posts = self.reddit.fetch_recent(limit=20)
+                        elif active_mode == "news":
+                            new_posts = self.news.fetch_recent(limit=20)
+                        elif active_mode == "rss":
+                            new_posts = self.rss.fetch_recent(limit=25)
+                        
+                        if new_posts:
+                            for post in new_posts:
+                                if post['id'] not in self.known_ids:
+                                    self.pending_queue.append(post)
+                            self._last_fetch_time = current_time
 
-            if self.pending_queue:
-                post = self.pending_queue.popleft()
-                post['entities'] = [w for w in post['text'].split() if len(w) > 5][:3]
-                self._process_and_add(post, active_mode)
-            else:
-                self._process_and_add(self.mock.generate_post(), "mock")
+                if self.pending_queue:
+                    post = self.pending_queue.popleft()
+                    post['entities'] = [w for w in post['text'].split() if len(w) > 5][:3]
+                    self._process_and_add(post, active_mode)
+                else:
+                    self._process_and_add(self.mock.generate_post(), "mock")
+                
+                self._update_stats_rolling()
+            except Exception as e:
+                print(f"ERROR in streamer worker: {e}")
+                # Wait a bit longer if we error to avoid spamming the logs
+                time.sleep(5)
             
-            self._update_stats_rolling()
             time.sleep(random.uniform(1.2, 2.5))
 
     def _process_and_add(self, post, mode):
@@ -266,8 +273,18 @@ class PoliticalStreamer:
 
     def get_snapshot(self):
         top_entities = sorted(self.entity_counts.items(), key=lambda x: x[1], reverse=True)[:8]
+        
+        # Determine the best posts to show
+        mode_posts = list(self.buffers.get(self.mode, []))[:15]
+        fallback_posts = []
+        
+        # If active mode is empty, provide mock posts as a temporary fallback
+        if not mode_posts and self.mode != "mock":
+            fallback_posts = list(self.buffers.get("mock", []))[:10]
+
         return {
-            "latest_posts": list(self.buffers.get(self.mode, []))[:15],
+            "latest_posts": mode_posts,
+            "fallback_posts": fallback_posts,
             "history": list(self.stats_history),
             "trending": [{"name": k, "count": v} for k, v in top_entities],
             "summary": self.stats_history[-1] if self.stats_history else {},

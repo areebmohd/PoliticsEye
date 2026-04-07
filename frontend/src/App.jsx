@@ -38,7 +38,7 @@ const PostCard = React.memo(({ post }) => (
 ));
 
 const App = () => {
-  const [data, setData] = useState({ latest_posts: [], history: [], summary: {}, trending: [], mode: 'mock' });
+  const [data, setData] = useState({ latest_posts: [], fallback_posts: [], history: [], summary: {}, trending: [], mode: 'mock' });
   const [loading, setLoading] = useState(true);
   const [serverStatus, setServerStatus] = useState('connecting');
   const [error, setError] = useState(null);
@@ -186,10 +186,20 @@ const App = () => {
                  filteredPosts.map((post) => (
                    <PostCard key={post.id} post={post} />
                  ))
+               ) : data.fallback_posts?.length > 0 ? (
+                 <>
+                   <div className="feed-info-banner">
+                      <Activity className="animate-spin" size={16} color="#3b82f6" />
+                      <span>{data.mode.toUpperCase()} stream warming up. Showing signal preview...</span>
+                   </div>
+                   {data.fallback_posts.map((post) => (
+                     <PostCard key={post.id} post={post} />
+                   ))}
+                 </>
                ) : serverStatus === 'online' ? (
                  <div className="feed-loading">
                     <Activity className="animate-spin" size={24} color="#3b82f6" />
-                    <p>Buffering active stream... Signal expected in 5-10s</p>
+                    <p>Initializing analysis pipeline... Signal expected shortly.</p>
                  </div>
                ) : null}
             </AnimatePresence>

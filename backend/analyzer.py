@@ -7,11 +7,7 @@ URL_PATTERN = re.compile(r'http\S+|www\S+|https\S+', re.MULTILINE)
 MENTION_HASHTAG_PATTERN = re.compile(r'\@\w+|\#\w+')
 CLEAN_CHARS_PATTERN = re.compile(r'[^a-zA-Z\s]')
 
-# Ensure necessary NLTK data (though we're not currently using stopwords in the scoring)
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords')
+# NLTK data is pre-installed during the build phase (see setup_nltk.py)
 
 class PoliticalAnalyzer:
     def __init__(self):
