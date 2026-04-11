@@ -85,16 +85,7 @@ const App = () => {
     }
   }, [fetchData]);
 
-  const pingServer = async () => {
-    try {
-      const rootUrl = API_BASE.replace('/api', '');
-      const start = Date.now();
-      await axios.get(rootUrl);
-      alert(`Ping Success! Server responded in ${Date.now() - start}ms\nURL: ${rootUrl}`);
-    } catch (err) {
-      alert(`Ping Failed!\nURL: ${API_BASE.replace('/api', '')}\nError: ${err.message}`);
-    }
-  };
+
 
   if (loading && !error) {
     return (
@@ -129,9 +120,7 @@ const App = () => {
           <button onClick={() => toggleMode('live')} className={`btn ${data.mode === 'live' ? 'active' : ''}`}>LIVE</button>
         </div>
 
-        <button onClick={pingServer} className="btn w-full" style={{ marginBottom: '24px', background: 'rgba(59, 130, 246, 0.1)', border: '1px dashed #3b82f6' }}>
-           ⚡ QUICK PING TEST
-        </button>
+
 
         <section className="stat-section" style={{ marginBottom: '30px' }}>
            <h2>Sentiment Average</h2>

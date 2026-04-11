@@ -4,6 +4,7 @@ import datetime
 import threading
 from collections import deque
 import feedparser
+import requests
 from newsapi import NewsApiClient
 
 # Simulated political headlines and templates for Mock Mode
@@ -98,7 +99,17 @@ class RSSScraper:
     def fetch_recent(self, subreddit="politics", limit=10):
         try:
             url = f"https://www.reddit.com/r/{subreddit}/new/.rss"
-            feed = feedparser.parse(url, agent="Mozilla/5.0 (Windows NT 10.0) PoliticsTracker/1.0")
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/rss+xml, application/xml;q=0.9, */*;q=0.8',
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                print(f"Error fetching RSS: {response.status_code}")
+                return []
+                
+            feed = feedparser.parse(response.content)
             posts = []
             now_iso = datetime.datetime.now().isoformat()
             for entry in feed.entries[:limit]:

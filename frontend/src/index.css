@@ -468,3 +468,58 @@ h3 {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .dashboard {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: relative;
+    padding: 24px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-y: visible;
+  }
+
+  .main-feed {
+    padding: 24px 16px;
+    width: 100%;
+    max-width: none;
+  }
+
+  .feed-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .filter-group {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+
+  .filter-group .btn {
+    flex: 1;
+    white-space: nowrap;
+  }
+
+  .big-number {
+    font-size: 28px;
+  }
+
+  .post-card {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .sidebar-header h1 {
+    font-size: 18px;
+  }
+}
+
