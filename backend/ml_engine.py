@@ -5,13 +5,20 @@ import os
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# TensorFlow imports
-try:
-    import tensorflow as tf
-    from tensorflow.keras import layers, models
-    TF_AVAILABLE = True
-except ImportError:
-    TF_AVAILABLE = False
+# Performance configuration: Disable heavy AI on low-resource environments
+DISABLE_TF = os.getenv("DISABLE_AI_HEAVY", "false").lower() == "true"
+
+TF_AVAILABLE = False
+if not DISABLE_TF:
+    try:
+        # We check for the module without fully loading the heavy parts yet
+        import importlib.util
+        if importlib.util.find_spec("tensorflow"):
+            TF_AVAILABLE = True
+    except:
+        TF_AVAILABLE = False
+
+if not TF_AVAILABLE:
     from sklearn.neural_network import MLPClassifier
 
 class SimilarityFinder:
@@ -60,6 +67,9 @@ class AdvancedSentimentModel:
 
     def _build_and_train_tf(self):
         """Build a simple TensorFlow neural network."""
+        import tensorflow as tf
+        from tensorflow.keras import layers, models
+        
         vocab_size = 1000
         max_length = 50
         self.model = models.Sequential([

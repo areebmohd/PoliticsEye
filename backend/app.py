@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
@@ -8,8 +8,8 @@ from scraper import PoliticalStreamer
 
 load_dotenv()
 
-app = Flask(__name__)
-# Enable CORS for the frontend development server
+app = Flask(__name__, static_folder='dist', static_url_path='/')
+# Enable CORS for development
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Configuration
@@ -35,13 +35,13 @@ def start_background_tasks():
         print(f"Starting background scraper thread for process {os.getpid()}...")
         streamer.start()
 
-@app.route('/', methods=['GET'])
-def index():
-    return jsonify({
-        "status": "online",
-        "message": "PoliticsEye Analysis Engine is active",
-        "endpoints": ["/api/health", "/api/snapshot", "/api/toggle-mode"]
-    })
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/api/health', methods=['GET'])
 def health():
@@ -61,8 +61,15 @@ def get_related(post_id):
         "related_ids": related_ids
     })
 
+import time
+
+# Performance tracking for similarity indexing
+last_similarity_update = 0
+UPDATE_INTERVAL = 30 # seconds
+
 @app.route('/api/snapshot', methods=['GET'])
 def get_snapshot():
+    global last_similarity_update
     snapshot = streamer.get_snapshot()
     # Use the summary directly from the snapshot if available
     summary = snapshot.get('summary', {"avg_sentiment": 0, "pos_count": 0, "neg_count": 0, "total_count": 0})
@@ -73,12 +80,16 @@ def get_snapshot():
         summary["neg_count"] = sum(1 for p in snapshot['latest_posts'] if p['sentiment'] == "negative")
         summary["total_count"] = len(snapshot['latest_posts'])
         
-    # Trigger Similarity Indexing for Scikit-Learn (on-the-fly)
-    # We use a larger pool of items (up to 100) from the buffer to ensure
-    # that clicks on "Related" don't fail as items scroll off the top 15.
-    all_buffer_posts = list(streamer.buffers.get(streamer.mode, []))
-    if all_buffer_posts:
-        analyzer.update_similarities(all_buffer_posts)
+    # Trigger Similarity Indexing for Scikit-Learn (Debounced)
+    # Re-indexing the entire buffer on every poll is slow. 
+    # We now only do it every UPDATE_INTERVAL seconds to keep localhost snappy.
+    now = time.time()
+    if now - last_similarity_update > UPDATE_INTERVAL:
+        all_buffer_posts = list(streamer.buffers.get(streamer.mode, []))
+        if all_buffer_posts:
+            print(f"DEBUG: Updating similarity index for {len(all_buffer_posts)} posts...")
+            analyzer.update_similarities(all_buffer_posts)
+            last_similarity_update = now
         
     return jsonify({
         **snapshot,

@@ -1,0 +1,13 @@
+.git
+.gitignore
+.vscode
+node_modules
+dist
+backend/__pycache__
+backend/.venv
+backend/.env
+frontend/node_modules
+frontend/dist
+*.md
+Dockerfile
+.dockerignore
