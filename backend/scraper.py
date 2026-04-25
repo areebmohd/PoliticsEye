@@ -5,7 +5,21 @@ import threading
 from collections import deque
 import feedparser
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from newsapi import NewsApiClient
+
+def create_session():
+    session = requests.Session()
+    retry = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
 
 # Simulated political headlines and templates for Mock Mode
 MOCK_TOPICS = ["Economy", "Election", "Healthcare", "Climate Policy", "Foreign Relations", "Education", "Infrastructure", "Trade Wars"]
@@ -96,15 +110,18 @@ class NewsScraper:
             return []
 
 class RSSScraper:
+    def __init__(self):
+        self.session = create_session()
+        
     def fetch_recent(self, subreddit="politics", limit=10):
         try:
             url = f"https://www.reddit.com/r/{subreddit}/new/.rss"
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'Accept': 'application/rss+xml, application/xml;q=0.9, */*;q=0.8',
             }
             
-            response = requests.get(url, headers=headers, timeout=10)
+            response = self.session.get(url, headers=headers, timeout=20)
             if response.status_code != 200:
                 print(f"Error fetching RSS: {response.status_code}")
                 return []
@@ -133,14 +150,17 @@ class RSSScraper:
             return []
 
 class MastodonScraper:
+    def __init__(self):
+        self.session = create_session()
+
     def fetch_recent(self, hashtag="politics", limit=10):
         try:
             url = f"https://mastodon.social/tags/{hashtag}.rss"
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             }
             
-            response = requests.get(url, headers=headers, timeout=10)
+            response = self.session.get(url, headers=headers, timeout=20)
             if response.status_code != 200:
                 print(f"Error fetching Mastodon: {response.status_code}")
                 return []
@@ -184,6 +204,7 @@ class MastodonScraper:
 
 class YouTubeScraper:
     def __init__(self):
+        self.session = create_session()
         self.channels = {
             "CNN": "UCupvZG-5ko_eiXAupbDfxWw",
             "BBC News": "UCR1j0aJUd-P8q-qJ1Oa4r7A",
@@ -202,13 +223,21 @@ class YouTubeScraper:
     def fetch_recent(self, limit=5):
         all_posts = []
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Cache-Control': 'max-age=0',
         }
         
         for name, channel_id in self.channels.items():
             try:
+                # Add a small random delay to avoid rate limiting
+                time.sleep(random.uniform(0.5, 1.5))
+                
                 url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-                response = requests.get(url, headers=headers, timeout=10)
+                response = self.session.get(url, headers=headers, timeout=20)
                 if response.status_code == 200:
                     feed = feedparser.parse(response.text)
                     for entry in feed.entries[:limit]:
@@ -219,6 +248,8 @@ class YouTubeScraper:
                             "source": "YouTube",
                             "author": name
                         })
+                else:
+                    print(f"YouTube {name} status: {response.status_code}")
             except Exception as e:
                 print(f"Error fetching from YouTube channel {name}: {e}")
                 
@@ -226,6 +257,7 @@ class YouTubeScraper:
 
 class TwitterScraper:
     def __init__(self):
+        self.session = create_session()
         # Verified working public RSS feeds for political news (as of 2026)
         self.sources = {
             "BBC Politics": "http://feeds.bbci.co.uk/news/politics/rss.xml",
@@ -235,14 +267,14 @@ class TwitterScraper:
     def fetch_recent(self, limit=10):
         all_posts = []
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         }
         
         now_iso = datetime.datetime.now().isoformat()
         
         for name, url in self.sources.items():
             try:
-                response = requests.get(url, headers=headers, timeout=10)
+                response = self.session.get(url, headers=headers, timeout=20)
                 if response.status_code == 200:
                     feed = feedparser.parse(response.content)
                     for entry in feed.entries[:limit]:
