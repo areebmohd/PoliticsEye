@@ -39,7 +39,7 @@ PoliticsEye/
 
 ## 📸 Screenshots
 
-
+<img width="1919" height="1079" alt="Screenshot 2026-05-04 172248" src="https://github.com/user-attachments/assets/f4eab86e-98d8-42e4-8a2c-7bdeacfaebe4" />
 
 ---
 
